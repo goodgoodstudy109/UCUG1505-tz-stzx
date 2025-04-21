@@ -17,7 +17,7 @@ const PLATFORM_TOLERANCE = 5;
 let classifier;
 let soundLabel = 'listening...';
 let soundConfidence = 0;
-const soundModel = 'tm-my-audio-model/model.json';
+const soundModel = '/tm-my-audio-model/model.json';
 let mic;
 
 // Game State
@@ -120,14 +120,36 @@ const levels = [
 
 function preload() {
     console.log('Preloading sound classification model...');
-    classifier = ml5.soundClassifier(soundModel, {
-        probabilityThreshold: 0.7
-    }, modelReady);
+    try {
+        // Get the current URL and construct absolute paths
+        const baseUrl = window.location.origin;
+        const modelUrl = `${baseUrl}/tm-my-audio-model/model.json`;
+        console.log('Loading model from:', modelUrl);
+        
+        // Create a new classifier with explicit error handling
+        classifier = ml5.soundClassifier(modelUrl, {
+            probabilityThreshold: 0.7,
+            modelUrl: modelUrl,
+            metadataUrl: `${baseUrl}/tm-my-audio-model/metadata.json`,
+            overlapFactor: 0.5
+        }, modelReady);
+        
+        // Add error handling
+        classifier.on('error', (error) => {
+            console.error('Error loading model:', error);
+            soundLabel = 'Error loading model';
+        });
+    } catch (error) {
+        console.error('Error in preload:', error);
+        soundLabel = 'Error initializing model';
+    }
 }
 
 function modelReady() {
     console.log('Sound classification model loaded successfully!');
     console.log('Model details:', classifier);
+    // Initialize microphone after model is ready
+    initMicrophone();
 }
 
 function initMicrophone() {

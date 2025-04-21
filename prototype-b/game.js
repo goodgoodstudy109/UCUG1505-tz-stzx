@@ -1,17 +1,22 @@
 // Game Constants
-const GRAVITY = 0.5;
-const JUMP_FORCE = -12;
+const GRAVITY = 0.3;  // Reduced gravity for better jump feel
+const JUMP_FORCE = -20;  // Increased jump force
 const MAX_SPEED = 10;
 const MIN_SPEED = 2;
 const BASE_SPEED = 3;
 const ACCELERATION = 0.2;
 const DECELERATION = 0.2;
+const DASH_SPEED = 15;  // Speed for horizontal dash
+const DASH_DURATION = 15;  // Frames for dash duration
+const MAX_FALL_SPEED = 8;  // Maximum normal falling speed
+const SLOW_FALL_SPEED = 3;  // Maximum speed when slow falling
 const PLATFORM_HEIGHT = 20;
 const NOTE_SIZE = 30;
 const SCREEN_WIDTH = 800;
 const SCREEN_HEIGHT = 600;
 const PORTAL_SIZE = 50;
 const PLATFORM_TOLERANCE = 5;
+const TIME_FACTOR = 0.4;  // Global time scaling factor
 
 // Audio Classification
 let classifier;
@@ -41,7 +46,11 @@ let player = {
     velocityY: 0,
     isJumping: false,
     isFloating: false,
-    speed: BASE_SPEED
+    speed: BASE_SPEED,
+    isDashing: false,
+    dashFrames: 0,
+    isSlowingFall: false,
+    isStopped: false
 };
 
 let platforms = [];
@@ -133,12 +142,6 @@ function preload() {
             metadataUrl: `${baseUrl}/tm-my-audio-model/metadata.json`,
             overlapFactor: 0.5
         }, modelReady);
-        
-        // Add error handling
-        classifier.on('error', (error) => {
-            console.error('Error loading model:', error);
-            soundLabel = 'Error loading model';
-        });
     } catch (error) {
         console.error('Error in preload:', error);
         soundLabel = 'Error initializing model';
@@ -290,7 +293,7 @@ function drawStaff() {
 
 function updatePlatforms() {
     for (let platform of platforms) {
-        platform.x -= player.speed;
+        platform.x -= player.speed * TIME_FACTOR;
     }
     // Remove platforms that are off-screen
     platforms = platforms.filter(p => p.x + p.width > 0);
@@ -306,7 +309,7 @@ function drawPlatforms() {
 
 function updateObstacles() {
     for (let obstacle of obstacles) {
-        obstacle.x -= player.speed;
+        obstacle.x -= player.speed * TIME_FACTOR;
     }
     // Remove obstacles that are off-screen
     obstacles = obstacles.filter(o => o.x + o.width > 0);
@@ -321,7 +324,7 @@ function drawObstacles() {
 
 function updatePortal() {
     if (portal) {
-        portal.x -= player.speed;
+        portal.x -= player.speed * TIME_FACTOR;
     }
 }
 
@@ -339,42 +342,52 @@ function updatePlayer() {
     // Record previous position for improved collision detection
     const prevY = player.y;
     
-    // Apply gravity with floating effect if active
-    if (player.isFloating) {
-        // 浮空状态下使用较小的重力效果
-        player.velocityY += GRAVITY * 0.3;
-    } else {
-        // 正常重力
-        player.velocityY += GRAVITY;
+    // Apply gravity
+    player.velocityY += GRAVITY * TIME_FACTOR;
+    
+    // Apply slow fall speed cap if active
+    if (player.isSlowingFall && player.velocityY > 0) {
+        player.velocityY = min(player.velocityY, SLOW_FALL_SPEED * TIME_FACTOR);
+    } else if (!player.isSlowingFall && player.velocityY > 0) {
+        // Cap normal falling speed
+        player.velocityY = min(player.velocityY, MAX_FALL_SPEED * TIME_FACTOR);
     }
     
-    player.y += player.velocityY;
-    
-    // Improved platform collision detection
+    // Check platform collisions and update position
     let onPlatform = false;
-    
-    // Check static platform collisions
     for (let platform of platforms) {
-        // Calculate collision direction
-        const wasAbove = prevY + NOTE_SIZE/2 <= platform.y + PLATFORM_TOLERANCE;
-        const isColliding = player.x + NOTE_SIZE/2 > platform.x && 
+        const isAbovePlatform = prevY + NOTE_SIZE/2 <= platform.y + PLATFORM_TOLERANCE;
+        const isOnPlatform = player.x + NOTE_SIZE/2 > platform.x && 
                            player.x - NOTE_SIZE/2 < platform.x + platform.width &&
                            player.y + NOTE_SIZE/2 > platform.y - PLATFORM_TOLERANCE && 
                            player.y - NOTE_SIZE/2 < platform.y + PLATFORM_HEIGHT;
         
-        if (isColliding) {
-            if (wasAbove) {
-                // Collision from above - player stands on platform
+        if (isOnPlatform) {
+            if (isAbovePlatform && player.velocityY >= 0) {
+                // Landing on platform
+                onPlatform = true;
                 player.y = platform.y - NOTE_SIZE/2;
                 player.velocityY = 0;
-                player.isJumping = false;
-                onPlatform = true;
                 break;
-            } else {
-                // Collision from below - player hits platform bottom
+            } else if (!isAbovePlatform) {
+                // Hit platform from below
+                player.velocityY = 0;
                 player.y = platform.y + PLATFORM_HEIGHT + NOTE_SIZE/2;
-                player.velocityY = Math.abs(player.velocityY) * 0.5; // Small bounce
             }
+        }
+    }
+    
+    if (!onPlatform) {
+        player.y += player.velocityY * TIME_FACTOR;
+    }
+    
+    // Handle dashing
+    if (player.isDashing) {
+        player.dashFrames++;
+        if (player.dashFrames >= DASH_DURATION) {
+            player.isDashing = false;
+            player.dashFrames = 0;
+            player.speed = BASE_SPEED;
         }
     }
     
@@ -434,6 +447,9 @@ function drawUI() {
     } else {
         text(`Sound: ${soundLabel}`, 20, 60);
         text(`Confidence: ${(soundConfidence * 100).toFixed(1)}%`, 20, 80);
+        text(`Player Speed: ${player.speed.toFixed(2)}`, 20, 100);
+        text(`Player Y Velocity: ${player.velocityY.toFixed(2)}`, 20, 120);
+        text(`Player Y Position: ${player.y.toFixed(2)}`, 20, 140);
     }
     
     if (gameState.isTutorial && gameState.currentLevel === 1) {
@@ -555,20 +571,9 @@ function checkLevelComplete() {
 }
 
 function updateSpeed() {
-    // 根据声音控制更新速度
-    if (gameState.isAccelerating) {
-        player.speed = min(player.speed + ACCELERATION, MAX_SPEED);
-    } else if (gameState.isDecelerating) {
-        player.speed = max(player.speed - DECELERATION, MIN_SPEED);
-    } else {
-        // Gradually return to base speed, smoother
-        if (player.speed > BASE_SPEED) {
-            player.speed -= ACCELERATION / 5;
-            if (player.speed < BASE_SPEED) player.speed = BASE_SPEED;
-        } else if (player.speed < BASE_SPEED) {
-            player.speed += ACCELERATION / 5;
-            if (player.speed > BASE_SPEED) player.speed = BASE_SPEED;
-        }
+    // Only reset speed if not stopped by hiss
+    if (!player.isDashing && player.speed !== 0) {
+        player.speed = BASE_SPEED;
     }
 }
 
@@ -579,48 +584,65 @@ function gotSoundResult(error, results) {
         return;
     }
     
-    // Log raw results for debugging
-    console.log('Sound classification results:', results);
-    
     if (results && results.length > 0) {
-        // Update sound label and confidence
         soundLabel = results[0].label;
         soundConfidence = results[0].confidence;
         
-        // Log detected sound and confidence
-        console.log(`Detected sound: ${soundLabel} (confidence: ${(soundConfidence * 100).toFixed(1)}%)`);
-        
-        // 只处理游戏未暂停状态下的声音控制
-        if (!gameState.isPaused && soundConfidence > 0.7) {
+        if (soundConfidence > 0.7) {
+            console.log('=== Command Execution ===');
+            console.log('Sound:', soundLabel, 'Confidence:', soundConfidence);
+            console.log('Current State - Y:', player.y.toFixed(2), 'VelocityY:', player.velocityY.toFixed(2), 'Speed:', player.speed.toFixed(2));
+            
             switch(soundLabel) {
-                case "blow": // 吹气 - 加速
-                    console.log('Triggering speedup');
-                    gameState.isAccelerating = true;
-                    gameState.isDecelerating = false;
-                    break;
-                case "hiss": // 嘶声 - 减速
-                    console.log('Triggering slowdown');
-                    gameState.isDecelerating = true;
-                    gameState.isAccelerating = false;
-                    break;
-                case "pop": // 啪声 - 跳跃
-                    if (!player.isJumping) {
-                        console.log('Triggering jump');
-                        player.velocityY = JUMP_FORCE;
-                        player.isJumping = true;
+                case "pop": // Jump
+                    console.log('Executing JUMP command');
+                    // Check if on platform
+                    let onPlatform = false;
+                    for (let platform of platforms) {
+                        if (player.x + NOTE_SIZE/2 > platform.x && 
+                            player.x - NOTE_SIZE/2 < platform.x + platform.width &&
+                            Math.abs(player.y + NOTE_SIZE/2 - platform.y) <= PLATFORM_TOLERANCE) {
+                            onPlatform = true;
+                            break;
+                        }
+                    }
+                    
+                    if (onPlatform || Math.abs(player.velocityY) < 0.1) {
+                        player.velocityY = JUMP_FORCE * TIME_FACTOR;
+                        player.isSlowingFall = false; // Reset slow fall when jumping
+                        console.log('New State - VelocityY:', player.velocityY.toFixed(2));
+                    } else {
+                        console.log('Cannot jump - Not on platform');
                     }
                     break;
-                case "hat": // 帽声 - 浮空（缓慢下落）
-                    console.log('Triggering floating');
-                    player.isFloating = true;
+                    
+                case "blow": // Slow falling speed
+                    console.log('Executing SLOW FALL command');
+                    if (player.velocityY > 0) { // Only slow fall when actually falling
+                        player.isSlowingFall = true;
+                        // Immediately cap the speed if already falling
+                        player.velocityY = min(player.velocityY, SLOW_FALL_SPEED * TIME_FACTOR);
+                    }
                     break;
+                    
+                case "hiss": // Complete stop
+                    console.log('Executing STOP command');
+                    player.speed = 0;
+                    player.isDashing = false;
+                    player.dashFrames = 0;
+                    player.isStopped = true;
+                    break;
+                    
                 default:
-                    // 对于其他声音或背景噪音，重置加速、减速和浮空状态
-                    gameState.isAccelerating = false;
-                    gameState.isDecelerating = false;
-                    player.isFloating = false;
+                    // Reset states for other sounds
+                    player.isSlowingFall = false;
+                    if (!player.isDashing) {
+                        player.speed = BASE_SPEED;
+                        player.isStopped = false;
+                    }
                     break;
             }
+            console.log('=== End Command ===\n');
         }
     }
 }

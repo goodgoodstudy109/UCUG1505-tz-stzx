@@ -14,10 +14,14 @@ const PLATFORM_HEIGHT = 20;
 const NOTE_SIZE = 30;
 const SCREEN_WIDTH = 800;
 const SCREEN_HEIGHT = 600;
-const PORTAL_SIZE = 50;
+const PORTAL_SIZE = 80;
+const FINISH_LINE_WIDTH = 20;  // Width of the finish line
+const FINISH_LINE_HEIGHT = 200;  // Height of the finish line
 const PLATFORM_TOLERANCE = 5;
-const TIME_FACTOR = 0.4;  // Global time scaling factor
+const TIME_FACTOR = 0.5;  // Global time scaling factor
 const EXPLOSION_DURATION = 30; // Frames for explosion animation
+const SLOW_FALL_DAMPING = 0.85;  // Increased damping (from 0.95 to 0.85) for slower gliding
+const DOWNSTRIKE_FORCE = 25;  // Powerful downstrike
 
 // Audio Classification
 let classifier;
@@ -54,7 +58,8 @@ let player = {
     isDashing: false,
     dashFrames: 0,
     isSlowingFall: false,
-    isStopped: false
+    isStopped: false,
+    isDownstriking: false
 };
 
 let platforms = [];
@@ -84,11 +89,11 @@ const levels = [
         tutorialText: [
             "Level 1: Get Started!",
             "Controls:",
-            "  \"blow\" -> Speed Up",
-            "  \"hiss\" -> Slow Down",
             "  \"pop\"  -> Jump",
-            "  \"hat\"  -> Float (Slow Fall)",
-            "Reach the blue portal!"
+            "  \"blow\" -> Glide (Float in air)",
+            "  \"hiss\" -> Stop & Strike Down",
+            "  \"hat\"  -> Dash Forward",
+            "Reach the checkered finish line!"
         ]
     },
     // Level 2: Obstacles & Moderate Jumps
@@ -144,7 +149,7 @@ function preload() {
             probabilityThreshold: 0.7,
             modelUrl: modelUrl,
             metadataUrl: `${baseUrl}/tm-my-audio-model/metadata.json`,
-            overlapFactor: 0.5
+            overlapFactor: 0.75
         }, modelReady);
     } catch (error) {
         console.error('Error in preload:', error);
@@ -394,8 +399,20 @@ function updatePortal() {
 
 function drawPortal() {
     if (portal) {
-        fill(0, 200, 255);
-        ellipse(portal.x, portal.y, PORTAL_SIZE, PORTAL_SIZE);
+        // Calculate finish line's screen position relative to player
+        let screenX = portal.x - player.x + 100;  // Fixed offset from left side instead of screen center
+        
+        // Draw finish line with checkered pattern
+        noStroke();
+        for (let i = 0; i < FINISH_LINE_HEIGHT; i += 20) {
+            fill(i % 40 === 0 ? 255 : 0);  // Alternating black and white
+            rect(screenX, portal.y - FINISH_LINE_HEIGHT/2 + i, FINISH_LINE_WIDTH, 20);
+        }
+        
+        // Add a simple pulsating effect
+        let pulse = sin(frameCount * 0.05) * 5;
+        fill(255, 255, 255, 100);
+        rect(screenX - 5, portal.y - FINISH_LINE_HEIGHT/2, FINISH_LINE_WIDTH + 10, FINISH_LINE_HEIGHT);
     }
 }
 
@@ -409,13 +426,15 @@ function updatePlayer() {
     // Apply gravity
     player.velocityY += GRAVITY * TIME_FACTOR;
     
-    // Apply slow fall speed cap if active
-    if (player.isSlowingFall && player.velocityY > 0) {
-        player.velocityY = min(player.velocityY, SLOW_FALL_SPEED * TIME_FACTOR);
-    } else if (!player.isSlowingFall && player.velocityY > 0) {
-        // Cap normal falling speed
+    // Apply smooth slow fall damping if active and not downstriking
+    if (player.isSlowingFall && player.velocityY > 0 && !player.isDownstriking) {
+        player.velocityY *= SLOW_FALL_DAMPING;
+        player.velocityY = max(player.velocityY, SLOW_FALL_SPEED * TIME_FACTOR);
+    } else if (!player.isSlowingFall && !player.isDownstriking && player.velocityY > 0) {
+        // Cap normal falling speed when not downstriking
         player.velocityY = min(player.velocityY, MAX_FALL_SPEED * TIME_FACTOR);
     }
+    // No speed cap during downstrike - let it fall at full force
     
     // Check platform collisions and update position
     let onPlatform = false;
@@ -544,9 +563,15 @@ function drawUI() {
     } else {
         text(`Sound: ${soundLabel}`, 20, 60);
         text(`Confidence: ${(soundConfidence * 100).toFixed(1)}%`, 20, 80);
-        text(`Player Speed: ${player.speed.toFixed(2)}`, 20, 100);
-        text(`Player Y Velocity: ${player.velocityY.toFixed(2)}`, 20, 120);
-        text(`Player Y Position: ${player.y.toFixed(2)}`, 20, 140);
+        
+        // Display current controls
+        if (!gameState.isTutorial) {
+            text("Controls:", 20, 110);
+            text("\"pop\"  -> Jump", 20, 130);
+            text("\"blow\" -> Glide (Float in air)", 20, 150);
+            text("\"hiss\" -> Stop & Strike Down", 20, 170);
+            text("\"hat\"  -> Dash Forward", 20, 190);
+        }
     }
     
     if (gameState.isTutorial && gameState.currentLevel === 1) {
@@ -653,16 +678,23 @@ function loadLevel(levelNum) {
 }
 
 function checkLevelComplete() {
-    if (portal && 
-        dist(player.x, player.y, portal.x, portal.y) < PORTAL_SIZE / 2 + NOTE_SIZE / 2) {
-        // Level complete
-        if (gameState.currentLevel < levels.length) {
-            loadLevel(gameState.currentLevel + 1);
-        } else {
-            // Completed the last level
-            gameState.totalTime = (millis() - gameState.startTime) / 1000;
-            gameState.isGameOver = true;
-            gameState.isPaused = true;
+    if (portal) {
+        // Check if player has crossed the finish line
+        let playerRight = player.x + NOTE_SIZE/2;
+        let finishLineLeft = portal.x - FINISH_LINE_WIDTH/2;
+        
+        if (playerRight > finishLineLeft && 
+            player.y > portal.y - FINISH_LINE_HEIGHT/2 && 
+            player.y < portal.y + FINISH_LINE_HEIGHT/2) {
+            // Level complete
+            if (gameState.currentLevel < levels.length) {
+                loadLevel(gameState.currentLevel + 1);
+            } else {
+                // Completed the last level
+                gameState.totalTime = (millis() - gameState.startTime) / 1000;
+                gameState.isGameOver = true;
+                gameState.isPaused = true;
+            }
         }
     }
 }
@@ -707,6 +739,7 @@ function gotSoundResult(error, results) {
                     if (onPlatform || Math.abs(player.velocityY) < 0.1) {
                         player.velocityY = JUMP_FORCE * TIME_FACTOR;
                         player.isSlowingFall = false; // Reset slow fall when jumping
+                        player.isDownstriking = false; // Reset downstrike when jumping
                         console.log('New State - VelocityY:', player.velocityY.toFixed(2));
                     } else {
                         console.log('Cannot jump - Not on platform');
@@ -717,22 +750,36 @@ function gotSoundResult(error, results) {
                     console.log('Executing SLOW FALL command');
                     if (player.velocityY > 0) { // Only slow fall when actually falling
                         player.isSlowingFall = true;
-                        // Immediately cap the speed if already falling
-                        player.velocityY = min(player.velocityY, SLOW_FALL_SPEED * TIME_FACTOR);
+                        player.isDownstriking = false; // Cancel downstrike if gliding
                     }
                     break;
                     
-                case "hiss": // Complete stop
-                    console.log('Executing STOP command');
+                case "hiss": // Horizontal freeze and downstrike
+                    console.log('Executing FREEZE AND DOWNSTRIKE command');
                     player.speed = 0;
                     player.isDashing = false;
                     player.dashFrames = 0;
                     player.isStopped = true;
+                    player.isDownstriking = true; // Enable downstrike mode
+                    player.isSlowingFall = false; // Disable slow fall during downstrike
+                    // Apply downstrike force
+                    player.velocityY = DOWNSTRIKE_FORCE * TIME_FACTOR;
+                    break;
+                    
+                case "hat": // Dash forward
+                    console.log('Executing DASH FORWARD command');
+                    if (!player.isDashing) {
+                        player.isDashing = true;
+                        player.dashFrames = 0;
+                        player.speed = DASH_SPEED;
+                        player.isDownstriking = false; // Cancel downstrike when dashing
+                    }
                     break;
                     
                 default:
                     // Reset states for other sounds
                     player.isSlowingFall = false;
+                    player.isDownstriking = false;
                     if (!player.isDashing) {
                         player.speed = BASE_SPEED;
                         player.isStopped = false;

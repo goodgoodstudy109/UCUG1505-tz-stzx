@@ -29,10 +29,12 @@ let player = {
 // Gravity and jump settings
 const gravity = 0.5;
 const jumpForce = -12;
+const PORTAL_SIZE = 80; // Larger portal size
 
 // Platforms - {x, y, width, height}
 let platforms = [];
 let ground;
+let portal = { x: 550, y: 200 }; // Portal position
 
 function preload() {
   // Construct the full model URL dynamically
@@ -117,6 +119,14 @@ function draw() {
     for (let platform of platforms) {
       rect(platform.x, platform.y, platform.width, platform.height);
     }
+
+    // Draw portal
+    fill(0, 200, 255);
+    ellipse(portal.x, portal.y, PORTAL_SIZE, PORTAL_SIZE);
+    // Add a simple pulsating effect
+    let pulse = sin(frameCount * 0.05) * 5;
+    fill(255, 255, 255, 100);
+    ellipse(portal.x, portal.y, PORTAL_SIZE * 0.6 + pulse, PORTAL_SIZE * 0.6 + pulse);
     
     // Display sound info
     fill(255);
@@ -204,6 +214,12 @@ function applyPhysics() {
       player.velocityY = 0;
       player.isJumping = false;
     }
+  }
+
+  // Check collision with portal
+  if (dist(player.x, player.y, portal.x, portal.y) < PORTAL_SIZE/2 + player.width/2) {
+    // Level complete logic can be added here
+    console.log("Level complete!");
   }
 }
 

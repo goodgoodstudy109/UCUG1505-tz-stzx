@@ -51,8 +51,7 @@ MIN_F2 = 700   # Minimum expected F2 frequency (Hz)
 
 # Confidence and noise settings
 MIN_CONFIDENCE = 0.3  # Minimum confidence threshold for formant detection
-CALIBRATION_TIME = 3.0  # Seconds to calibrate background noise
-NOISE_MARGIN = 1.2  # Signal must be this many times louder than background
+MIN_AMPLITUDE = 400   # Minimum amplitude threshold for valid speech (lowered from 1000)
 FORMANT_SMOOTHING = 0.7  # Smoothing factor for formant values (0.0 to 1.0)
 
 # Create a queue for communication between threads
@@ -63,34 +62,11 @@ class FormantAnalyzer:
         self.is_running = False
         self.audio = pyaudio.PyAudio()
         self.temp_dir = tempfile.mkdtemp()
-        self.background_level = None
         self.last_f1 = None
         self.last_f2 = None
         
-    def calibrate_background_noise(self):
-        """Measure background noise level before starting the game"""
-        print("Calibrating background noise... Please be quiet for 3 seconds.")
-        stream = self.audio.open(format=FORMAT, channels=CHANNELS,
-                                rate=RATE, input=True,
-                                frames_per_buffer=CHUNK)
-        
-        # Collect samples for calibration
-        samples = []
-        for _ in range(int(CALIBRATION_TIME * RATE / CHUNK)):
-            data = stream.read(CHUNK, exception_on_overflow=False)
-            samples.append(np.frombuffer(data, dtype=np.int16))
-        
-        # Calculate RMS of background noise
-        all_samples = np.concatenate(samples)
-        self.background_level = np.sqrt(np.mean(all_samples**2))
-        print(f"Background noise level: {self.background_level:.1f}")
-        
-        stream.stop_stream()
-        stream.close()
-        
     def start(self):
         """Start the audio recording and analysis thread"""
-        self.calibrate_background_noise()
         self.is_running = True
         self.analysis_thread = threading.Thread(target=self._analyze_audio)
         self.analysis_thread.daemon = True
@@ -118,12 +94,12 @@ class FormantAnalyzer:
                 data = stream.read(CHUNK, exception_on_overflow=False)
                 frames.append(data)
                 
-            # Convert to numpy array and check intensity
+            # Convert to numpy array and check amplitude
             audio_data = np.frombuffer(b''.join(frames), dtype=np.int16)
-            current_level = np.sqrt(np.mean(audio_data**2))
+            current_amplitude = np.abs(audio_data).mean()
             
-            # Only process if significantly above background noise
-            if current_level < self.background_level * NOISE_MARGIN:
+            # Only process if amplitude is high enough
+            if current_amplitude < MIN_AMPLITUDE:
                 formant_queue.put((None, None, 0.0))  # Low confidence
                 continue
                 
@@ -306,10 +282,15 @@ class FormantGame:
                 
                 # Draw vowel positions for reference
                 vowels = {
-                    "EE": self.map_formants_to_position(280, 2300),  # /i/ as in "beat"
-                    "AE": self.map_formants_to_position(700, 1800),  # /æ/ as in "bat"
-                    "AH": self.map_formants_to_position(780, 1100),  # /ɑ/ as in "father"
-                    "OO": self.map_formants_to_position(330, 870),   # /u/ as in "boot"
+                    "i": self.map_formants_to_position(270, 2290),   # [i] as in "beat"
+                    "e": self.map_formants_to_position(390, 2300),   # [e] as in "bait"
+                    "ɛ": self.map_formants_to_position(610, 1900),   # [ɛ] as in "bet"
+                    "æ": self.map_formants_to_position(860, 1720),   # [æ] as in "bat"
+                    "ɑ": self.map_formants_to_position(730, 1090),   # [ɑ] as in "father"
+                    "ɔ": self.map_formants_to_position(590, 880),    # [ɔ] as in "bought"
+                    "o": self.map_formants_to_position(470, 760),    # [o] as in "boat"
+                    "u": self.map_formants_to_position(300, 870),    # [u] as in "boot"
+                    "ə": self.map_formants_to_position(500, 1500),   # [ə] schwa as in "about"
                 }
                 
                 for vowel, (vx, vy) in vowels.items():

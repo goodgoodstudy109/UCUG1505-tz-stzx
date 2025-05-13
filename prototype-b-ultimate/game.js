@@ -768,18 +768,11 @@ function gotSoundResult(error, results) {
                     
                 case "hat": // Dash forward
                     console.log('Executing DASH FORWARD command');
-                    /* Original dash functionality:
                     if (!player.isDashing) {
                         player.isDashing = true;
                         player.dashFrames = 0;
                         player.speed = DASH_SPEED;
                         player.isDownstriking = false; // Cancel downstrike when dashing
-                    }
-                    */
-                    if (!player.isJumping) {
-                        console.log('Triggering jump');
-                        player.velocityY = JUMP_FORCE * TIME_FACTOR;  // Apply same time scaling as pop jump
-                        player.isJumping = true;
                     }
                     break;
                     

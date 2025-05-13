@@ -1,0 +1,4 @@
+# Core dependencies
+parselmouth
+websockets
+numpy 

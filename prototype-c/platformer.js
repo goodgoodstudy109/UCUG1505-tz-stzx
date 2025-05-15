@@ -52,7 +52,10 @@ const MAX_F1 = 1000;  // Maximum expected F1 frequency (Hz)
 const MIN_F2 = 700;   // Minimum expected F2 frequency (Hz)
 const MAX_F2 = 2500;  // Maximum expected F2 frequency (Hz)
 const MIN_CONFIDENCE = 0.3;  // Minimum confidence threshold for formant detection
-const MIN_AMPLITUDE = 400;   // Minimum amplitude threshold for valid speech
+const MIN_AMPLITUDE = 400;   // Minimum amplitude threshold
+const MAX_AMPLITUDE = 2000;  // Maximum amplitude for full effect
+const MIN_AMPLITUDE_SCALE = 0.3; // Minimum movement scale at low amplitude
+const AMPLITUDE_SCALE = 1.5; // How much amplitude affects movement
 const FORMANT_SMOOTHING = 0.85;  // Smoothing factor for formant values
 
 // Colors (will be initialized in setup)
@@ -67,7 +70,8 @@ const gameState = {
     explosionTimer: 0,
     countdown: 3,
     isGameOver: false,
-    showTitle: true // Only need title screen now
+    showTitle: true,
+    amplitude: 0 // Add amplitude tracking
 };
 
 // Level Design from prototype-b-ultimate
@@ -252,81 +256,6 @@ class Player {
         this.velocity = createVector(0, 0);
         this.size = 40;
         this.color = color(255, 255, 0);
-        this.speed = BASE_SPEED;
-    }
-    
-    update() {
-        // Apply gravity
-        this.velocity.y += GRAVITY;
-        
-        // Update position
-        this.position.add(this.velocity);
-        
-        // Keep player in bounds
-        if (this.position.x < 0) {
-            this.position.x = 0;
-            this.velocity.x = 0;
-        }
-        if (this.position.x > width - this.size) {
-            this.position.x = width - this.size;
-            this.velocity.x = 0;
-        }
-        if (this.position.y < 0) {
-            this.position.y = 0;
-            this.velocity.y = 0;
-        }
-        if (this.position.y > height - this.size) {
-            this.position.y = height - this.size;
-            this.velocity.y = 0;
-        }
-        
-        // Check platform collisions
-        for (let platform of platforms) {
-            if (this.collidesWith(platform)) {
-                if (this.velocity.y > 0) {  // Falling
-                    this.position.y = platform.position.y - this.size;
-                    this.velocity.y = 0;
-                } else if (this.velocity.y < 0) {  // Jumping
-                    this.position.y = platform.position.y + platform.size.y;
-                    this.velocity.y = 0;
-                }
-            }
-        }
-        
-        // Check obstacle collisions
-        for (let obstacle of obstacles) {
-            if (this.collidesWith(obstacle)) {
-                // Trigger explosion
-                gameState.explosionActive = true;
-                gameState.explosionPosition = { x: obstacle.position.x, y: obstacle.position.y };
-                gameState.explosionTimer = EXPLOSION_DURATION;
-                
-                // Remove obstacle
-                obstacles = obstacles.filter(o => o !== obstacle);
-                
-                // Reset player position
-                this.position.x = 100;
-                this.position.y = SCREEN_HEIGHT - 100;
-                this.velocity.x = 0;
-                this.velocity.y = 0;
-                break;
-            }
-        }
-        
-        // Update explosion timer
-        if (gameState.explosionActive) {
-            gameState.explosionTimer--;
-            if (gameState.explosionTimer <= 0) {
-                gameState.explosionActive = false;
-            }
-        }
-    }
-    
-    collidesWith(object) {
-        return (this.position.x < object.position.x + object.size.x &&
-                this.position.x + this.size > object.position.x &&
-                this.position.y < object.position.y + object.size.y &&
-                this.position.y + this.size > object.position.y);
     }
 }
 
@@ -632,10 +561,13 @@ function drawPlatforms() {
 }
 
 function updatePlatforms() {
-    for (let platform of platforms) {
-        platform.position.x -= player.speed * TIME_FACTOR;
+    // Only move platforms if player has horizontal velocity
+    if (player.velocity.x !== 0) {
+        for (let platform of platforms) {
+            platform.position.x -= player.velocity.x * TIME_FACTOR;
+        }
+        platforms = platforms.filter(p => p.position.x + p.size.x > 0);
     }
-    platforms = platforms.filter(p => p.position.x + p.size.x > 0);
 }
 
 function drawObstacles() {
@@ -698,10 +630,13 @@ function drawExplosion(x, y) {
 }
 
 function updateObstacles() {
-    for (let obstacle of obstacles) {
-        obstacle.position.x -= player.speed * TIME_FACTOR;
+    // Only move obstacles if player has horizontal velocity
+    if (player.velocity.x !== 0) {
+        for (let obstacle of obstacles) {
+            obstacle.position.x -= player.velocity.x * TIME_FACTOR;
+        }
+        obstacles = obstacles.filter(o => o.position.x + o.size.x > 0);
     }
-    obstacles = obstacles.filter(o => o.position.x + o.size.x > 0);
 }
 
 function drawPortal() {
@@ -729,8 +664,9 @@ function drawPortal() {
 }
 
 function updatePortal() {
-    if (portal) {
-        portal.x -= player.speed * TIME_FACTOR;
+    // Only move portal if player has horizontal velocity
+    if (portal && player.velocity.x !== 0) {
+        portal.x -= player.velocity.x * TIME_FACTOR;
     }
 }
 
@@ -824,29 +760,62 @@ function updatePlayer() {
         movementConfig.horizontalFactor = horizontalSlider.value();
         movementConfig.verticalFactor = verticalSlider.value();
         
+        // Reset velocity to zero by default
+        player.velocity.x = 0;
+        
         // Apply formant-based controls
         if (f1 && f2 && confidence > MIN_CONFIDENCE) {
+            // Calculate amplitude scaling factor (0.3 to 1.0)
+            // This will only reduce movement at low volumes, never increase it
+            const amplitudeScale = map(
+                constrain(gameState.amplitude, MIN_AMPLITUDE, MAX_AMPLITUDE),
+                MIN_AMPLITUDE, MAX_AMPLITUDE,
+                MIN_AMPLITUDE_SCALE, 1.0  // Scale from 0.3 to 1.0
+            );
+            
             // F2 (front-back) controls horizontal movement
-            const f2_normalized = (f2 - MIN_F2) / (MAX_F2 - MIN_F2); // Normalize F2 to 0-1 range
-            // Direct velocity control instead of acceleration
-            player.velocity.x = (f2_normalized - 0.5) * MAX_SPEED * movementConfig.horizontalFactor * confidence;
+            const neutralF2 = 840;
+            
+            // Calculate distance from neutral point
+            const f2Distance = f2 - neutralF2;
+            
+            // Apply asymmetric scaling for left/right movement
+            let f2_normalized;
+            if (f2Distance < 0) {
+                // Amplify left movement (negative values)
+                f2_normalized = (f2Distance / (neutralF2 - MIN_F2)) * 1.5; // 1.5x amplification for left
+            } else {
+                // Normal scaling for right movement
+                f2_normalized = f2Distance / (MAX_F2 - neutralF2);
+            }
+            
+            // Apply amplitude scaling to the normalized value
+            // This will only reduce movement at low volumes
+            f2_normalized *= amplitudeScale;
+            
+            // Direct velocity control with amplitude scaling
+            player.velocity.x = f2_normalized * MAX_SPEED * movementConfig.horizontalFactor * confidence;
             
             // F1 (openness) controls antigravity
             // Map F1 to antigravity force:
             // - 400Hz = 0 (no antigravity)
-            // - 650Hz = -GRAVITY (exactly cancels gravity)
-            // - >650Hz = stronger upward force
+            // - 600Hz = -GRAVITY (exactly cancels gravity)
+            // - >600Hz = stronger upward force
             const neutralF1 = 400;     // 400Hz
-            const balanceF1 = 650;     // 650Hz
+            const balanceF1 = 600;     // 600Hz (lowered from 650Hz)
             let antigravityForce = 0;
             
             if (f1 >= neutralF1) {  // Only apply if F1 is at least 400Hz
                 // Calculate how far we are from neutral point (400Hz)
-                const f1Range = balanceF1 - neutralF1;  // 250Hz range
+                const f1Range = balanceF1 - neutralF1;  // 200Hz range (reduced from 250Hz)
                 const f1Offset = f1 - neutralF1;        // How far above 400Hz
                 
-                // Calculate force: 0 at 400Hz, -GRAVITY at 650Hz, stronger above 650Hz
+                // Calculate force: 0 at 400Hz, -GRAVITY at 600Hz, stronger above 600Hz
                 antigravityForce = (f1Offset / f1Range) * GRAVITY * movementConfig.verticalFactor * confidence;
+                
+                // Apply amplitude scaling to antigravity
+                // This will only reduce movement at low volumes
+                antigravityForce *= amplitudeScale;
                 
                 // Apply the force
                 player.velocity.y -= antigravityForce;
@@ -858,9 +827,6 @@ function updatePlayer() {
                     player.velocity.y = terminalVelocity;
                 }
             }
-        } else {
-            // No input = no movement
-            player.velocity.x = 0;
         }
         
         // Apply gravity

@@ -137,6 +137,51 @@ const levels = [
             { x: 1300, y: SCREEN_HEIGHT - 220, width: 30, height: 30 }  // Obstacle before final jump
         ],
         portal: { x: 1550, y: SCREEN_HEIGHT - 300 } // Portal is higher up
+    },
+    // Level 4: Horizontal Moving Platforms
+    {
+        platforms: [
+            { x: 100, y: SCREEN_HEIGHT - 50, width: 150 },
+            { x: 300, y: SCREEN_HEIGHT - 100, width: 100 },
+            // Moving Platform 1
+            { x: 500, y: SCREEN_HEIGHT - 150, width: 120,
+              moveType: 'horizontal', moveMin: 450, moveMax: 650, moveSpeed: 1.5, moveDirection: 1 },
+            { x: 800, y: SCREEN_HEIGHT - 180, width: 100 },
+            // Moving Platform 2 - Faster
+            { x: 1000, y: SCREEN_HEIGHT - 220, width: 100,
+              moveType: 'horizontal', moveMin: 950, moveMax: 1150, moveSpeed: -2, moveDirection: -1 },
+            { x: 1300, y: SCREEN_HEIGHT - 200, width: 150 },
+        ],
+        obstacles: [
+            { x: 400, y: SCREEN_HEIGHT - 130, width: 30, height: 30 }, // Before moving platform
+            { x: 950, y: SCREEN_HEIGHT - 210, width: 30, height: 30 }, // Near moving platform
+            { x: 1250, y: SCREEN_HEIGHT - 230, width: 30, height: 30 }
+        ],
+        portal: { x: 1500, y: SCREEN_HEIGHT - 250 }
+    },
+    // Level 5: Vertical & Mixed Moving Platforms
+    {
+        platforms: [
+            { x: 100, y: SCREEN_HEIGHT - 50, width: 150 },
+            // Vertical Moving Platform 1
+            { x: 300, y: SCREEN_HEIGHT - 100, width: 100,
+              moveType: 'vertical', moveMin: SCREEN_HEIGHT - 150, moveMax: SCREEN_HEIGHT - 80, moveSpeed: 1, moveDirection: 1 },
+            { x: 500, y: SCREEN_HEIGHT - 180, width: 100 },
+            // Horizontal Moving Platform
+            { x: 700, y: SCREEN_HEIGHT - 220, width: 120,
+              moveType: 'horizontal', moveMin: 650, moveMax: 850, moveSpeed: -1.5, moveDirection: -1 },
+            // Vertical Moving Platform 2 - Faster
+            { x: 1000, y: SCREEN_HEIGHT - 250, width: 80,
+              moveType: 'vertical', moveMin: SCREEN_HEIGHT - 300, moveMax: SCREEN_HEIGHT - 200, moveSpeed: 2, moveDirection: 1 },
+            { x: 1250, y: SCREEN_HEIGHT - 280, width: 150 }, // Final static platform
+        ],
+        obstacles: [
+            { x: 450, y: SCREEN_HEIGHT - 200, width: 30, height: 30 }, // Near vertical platform path
+            { x: 650, y: SCREEN_HEIGHT - 250, width: 30, height: 30 }, // Near horizontal platform path
+            { x: 950, y: SCREEN_HEIGHT - 280, width: 30, height: 30 }, // Near second vertical platform
+            { x: 1150, y: SCREEN_HEIGHT - 310, width: 30, height: 30 }
+        ],
+        portal: { x: 1450, y: SCREEN_HEIGHT - 330 } // Higher portal
     }
 ];
 
@@ -260,9 +305,14 @@ class Player {
 }
 
 class Platform {
-    constructor(x, y, w, h) {
+    constructor(x, y, w, h, moveType = null, moveMin = null, moveMax = null, moveSpeed = null, moveDirection = 1) {
         this.position = createVector(x, y);
         this.size = createVector(w, h);
+        this.moveType = moveType;
+        this.moveMin = moveMin;
+        this.moveMax = moveMax;
+        this.moveSpeed = moveSpeed;
+        this.moveDirection = moveDirection;
     }
 }
 
@@ -561,13 +611,35 @@ function drawPlatforms() {
 }
 
 function updatePlatforms() {
-    // Only move platforms if player has horizontal velocity
-    if (player.velocity.x !== 0) {
-        for (let platform of platforms) {
+    for (let platform of platforms) {
+        // Handle platform's own movement logic
+        if (platform.moveType) {
+            let speed = platform.moveSpeed * platform.moveDirection;
+            if (platform.moveType === 'horizontal') {
+                platform.position.x += speed;
+                if ((platform.moveDirection === 1 && platform.position.x >= platform.moveMax) ||
+                    (platform.moveDirection === -1 && platform.position.x <= platform.moveMin)) {
+                    platform.moveDirection *= -1;
+                    platform.position.x = constrain(platform.position.x, platform.moveMin, platform.moveMax);
+                }
+            } else if (platform.moveType === 'vertical') {
+                platform.position.y += speed;
+                if ((platform.moveDirection === 1 && platform.position.y >= platform.moveMax) ||
+                    (platform.moveDirection === -1 && platform.position.y <= platform.moveMin)) {
+                    platform.moveDirection *= -1;
+                    platform.position.y = constrain(platform.position.y, platform.moveMin, platform.moveMax);
+                }
+            }
+        }
+
+        // Apply world scroll based on player's movement
+        if (player.velocity.x !== 0) {
             platform.position.x -= player.velocity.x * TIME_FACTOR;
         }
-        platforms = platforms.filter(p => p.position.x + p.size.x > 0);
     }
+
+    // Remove platforms that are off-screen
+    platforms = platforms.filter(p => p.position.x + p.size.x > 0);
 }
 
 function drawObstacles() {
@@ -1032,7 +1104,17 @@ function loadLevel(levelNum) {
     
     // Create platforms
     for (let platform of level.platforms) {
-        platforms.push(new Platform(platform.x, platform.y, platform.width, PLATFORM_HEIGHT));
+        platforms.push(new Platform(
+            platform.x,
+            platform.y,
+            platform.width,
+            PLATFORM_HEIGHT,
+            platform.moveType,
+            platform.moveMin,
+            platform.moveMax,
+            platform.moveSpeed,
+            platform.moveDirection
+        ));
     }
     
     // Create obstacles

@@ -10,28 +10,12 @@ let f1, f2, confidence;
 
 // Game Constants
 const GRAVITY = 0.3;  // Reduced gravity for better jump feel
-const JUMP_FORCE = -20;  // Increased jump force
-const MAX_SPEED = 10;
-const MIN_SPEED = 2;
-const BASE_SPEED = 3;
-const ACCELERATION = 0.2;
-const DECELERATION = 0.2;
-const DASH_SPEED = 15;  // Speed for horizontal dash
-const DASH_DURATION = 15;  // Frames for dash duration
-const MAX_FALL_SPEED = 8;  // Maximum normal falling speed
-const SLOW_FALL_SPEED = 3;  // Maximum speed when slow falling
+const MAX_SPEED = 40;  // Increased from 20 to 40
 const PLATFORM_HEIGHT = 20;
-const NOTE_SIZE = 30;
 const SCREEN_WIDTH = 800;
 const SCREEN_HEIGHT = 600;
-const PORTAL_SIZE = 80;
-const FINISH_LINE_WIDTH = 20;  // Width of the finish line
-const FINISH_LINE_HEIGHT = 200;  // Height of the finish line
-const PLATFORM_TOLERANCE = 5;
 const TIME_FACTOR = 0.5;  // Global time scaling factor
 const EXPLOSION_DURATION = 30; // Frames for explosion animation
-const SLOW_FALL_DAMPING = 0.85;  // Increased damping (from 0.95 to 0.85) for slower gliding
-const DOWNSTRIKE_FORCE = 25;  // Powerful downstrike
 const REFERENCE_LINE_COLOR = [255, 0, 0, 128];  // Semi-transparent red for reference lines
 
 // Camera settings
@@ -89,36 +73,8 @@ const levels = [
         ],
         obstacles: [], // No obstacles in level 1
         portal: { x: 1780, y: SCREEN_HEIGHT - 190 },
-        tutorialText: [
-            "Level 1: Get Started!",
-            "Controls:",
-            "  F1 (openness) -> Float Up",
-            "  F2 (front-back) -> Move Left/Right",
-            "  Say 'EE' to move right",
-            "  Say 'AH' to move left",
-            "  Say 'AE' to float up",
-            "Reach the portal!"
-        ]
     },
-    // Level 2: Obstacles & Moderate Jumps
-    {
-        platforms: [
-            { x: 100, y: SCREEN_HEIGHT - 50, width: 200 },
-            { x: 350, y: SCREEN_HEIGHT - 90, width: 150 },
-            { x: 550, y: SCREEN_HEIGHT - 140, width: 120 }, // Bigger jump
-            { x: 750, y: SCREEN_HEIGHT - 100, width: 100 }, // Smaller platform
-            { x: 900, y: SCREEN_HEIGHT - 150, width: 130 },
-            { x: 1100, y: SCREEN_HEIGHT - 180, width: 150 },
-            { x: 1300, y: SCREEN_HEIGHT - 160, width: 180 }, // Wider landing before portal
-        ],
-        obstacles: [
-            { x: 500, y: SCREEN_HEIGHT - 80, width: 30, height: 30 },  // First obstacle on ground
-            { x: 850, y: SCREEN_HEIGHT - 130, width: 30, height: 30 }, // Obstacle on a lower platform path
-            { x: 1200, y: SCREEN_HEIGHT - 210, width: 30, height: 30 } // Obstacle near a higher platform
-        ],
-        portal: { x: 1500, y: SCREEN_HEIGHT - 210 }
-    },
-    // Level 3: Advanced Platforming & Floating
+    // Level 2: Advanced Platforming & Floating
     {
         platforms: [
             { x: 100, y: SCREEN_HEIGHT - 50, width: 180 },
@@ -138,11 +94,13 @@ const levels = [
         ],
         portal: { x: 1550, y: SCREEN_HEIGHT - 300 } // Portal is higher up
     },
-    // Level 4: Horizontal Moving Platforms
+    // Level 3: Moving Platforms
     {
         platforms: [
             { x: 100, y: SCREEN_HEIGHT - 50, width: 150 },
-            { x: 300, y: SCREEN_HEIGHT - 100, width: 100 },
+            // Add vertical moving platform
+            { x: 300, y: SCREEN_HEIGHT - 100, width: 100,
+              moveType: 'vertical', moveMin: SCREEN_HEIGHT - 150, moveMax: SCREEN_HEIGHT - 80, moveSpeed: 1, moveDirection: 1 },
             // Moving Platform 1
             { x: 500, y: SCREEN_HEIGHT - 150, width: 120,
               moveType: 'horizontal', moveMin: 450, moveMax: 650, moveSpeed: 1.5, moveDirection: 1 },
@@ -158,30 +116,6 @@ const levels = [
             { x: 1250, y: SCREEN_HEIGHT - 230, width: 30, height: 30 }
         ],
         portal: { x: 1500, y: SCREEN_HEIGHT - 250 }
-    },
-    // Level 5: Vertical & Mixed Moving Platforms
-    {
-        platforms: [
-            { x: 100, y: SCREEN_HEIGHT - 50, width: 150 },
-            // Vertical Moving Platform 1
-            { x: 300, y: SCREEN_HEIGHT - 100, width: 100,
-              moveType: 'vertical', moveMin: SCREEN_HEIGHT - 150, moveMax: SCREEN_HEIGHT - 80, moveSpeed: 1, moveDirection: 1 },
-            { x: 500, y: SCREEN_HEIGHT - 180, width: 100 },
-            // Horizontal Moving Platform
-            { x: 700, y: SCREEN_HEIGHT - 220, width: 120,
-              moveType: 'horizontal', moveMin: 650, moveMax: 850, moveSpeed: -1.5, moveDirection: -1 },
-            // Vertical Moving Platform 2 - Faster
-            { x: 1000, y: SCREEN_HEIGHT - 250, width: 80,
-              moveType: 'vertical', moveMin: SCREEN_HEIGHT - 300, moveMax: SCREEN_HEIGHT - 200, moveSpeed: 2, moveDirection: 1 },
-            { x: 1250, y: SCREEN_HEIGHT - 280, width: 150 }, // Final static platform
-        ],
-        obstacles: [
-            { x: 450, y: SCREEN_HEIGHT - 200, width: 30, height: 30 }, // Near vertical platform path
-            { x: 650, y: SCREEN_HEIGHT - 250, width: 30, height: 30 }, // Near horizontal platform path
-            { x: 950, y: SCREEN_HEIGHT - 280, width: 30, height: 30 }, // Near second vertical platform
-            { x: 1150, y: SCREEN_HEIGHT - 310, width: 30, height: 30 }
-        ],
-        portal: { x: 1450, y: SCREEN_HEIGHT - 330 } // Higher portal
     }
 ];
 
@@ -242,8 +176,8 @@ let configText = '';
 
 // Movement settings
 let movementConfig = {
-    horizontalFactor: 0.5,
-    verticalFactor: 5.0  // Increased from 3.0 to 5.0
+    horizontalFactor: 2.0,  // Increased from 1.0 to 2.0
+    verticalFactor: 8.0     // Increased from 5.0 to 8.0
 };
 
 function loadVowelConfig() {
@@ -451,15 +385,62 @@ class FormantAnalyzer {
 
 let prevLevelButton, nextLevelButton;
 
+// Camera class to handle coordinate transformations
+class Camera {
+    constructor() {
+        this.position = createVector(0, 0);
+        this.target = createVector(0, 0);
+        this.offsetX = SCREEN_WIDTH * 0.3;
+        this.offsetY = SCREEN_HEIGHT * 0.5;
+    }
+
+    update() {
+        // Smoothly follow target
+        this.position.x = lerp(this.position.x, this.target.x - this.offsetX, 0.1);
+        this.position.y = lerp(this.position.y, this.target.y - this.offsetY, 0.1);
+    }
+
+    // Convert world coordinates to screen coordinates
+    worldToScreen(worldX, worldY) {
+        return {
+            x: worldX - this.position.x,
+            y: worldY - this.position.y
+        };
+    }
+
+    // Convert screen coordinates to world coordinates
+    screenToWorld(screenX, screenY) {
+        return {
+            x: screenX + this.position.x,
+            y: screenY + this.position.y
+        };
+    }
+
+    // Apply camera transform for drawing
+    begin() {
+        push();
+        translate(-this.position.x, -this.position.y);
+    }
+
+    // End camera transform
+    end() {
+        pop();
+    }
+}
+
+// Add camera to game state
+let camera;
+
 function setup() {
     createCanvas(SCREEN_WIDTH, SCREEN_HEIGHT);
     
     // Initialize colors
-    skyColorTop = color(135, 206, 250); // Light Sky Blue
-    skyColorBottom = color(173, 216, 230); // Lighter Blue
+    skyColorTop = color(135, 206, 250);
+    skyColorBottom = color(173, 216, 230);
     
-    // Create player
+    // Create player and camera
     player = new Player(100, SCREEN_HEIGHT - 100);
+    camera = new Camera();
     
     // Load first level
     loadLevel(1);
@@ -477,7 +458,7 @@ function setup() {
     // Start initial countdown
     startCountdown();
 
-    // Add Previous/Next Level Buttons at the bottom of the window
+    // Add Previous/Next Level Buttons
     prevLevelButton = createButton('Previous Level');
     nextLevelButton = createButton('Next Level');
     positionLevelButtons();
@@ -526,36 +507,26 @@ function setupClouds() {
 }
 
 function draw() {
-    // Calculate camera position
-    let cameraX = player.position.x - CAMERA_OFFSET_X;
-    let cameraY = player.position.y - CAMERA_OFFSET_Y;
+    // Update camera to follow player
+    camera.target = player.position;
+    camera.update();
     
     // Draw sky gradient background
     drawSkyGradient();
     
-    // Apply camera transform
-    push();
-    translate(-cameraX, -cameraY);
+    // Begin camera transform
+    camera.begin();
     
-    // Draw reference lines
+    // Draw game world
     drawReferenceLines();
-    
-    // Draw clouds
     drawClouds();
-    
-    // Draw platforms
     drawPlatforms();
-    
-    // Draw obstacles
     drawObstacles();
-    
-    // Draw portal
     drawPortal();
-    
-    // Draw player
     drawPlayer();
     
-    pop();  // Reset transform
+    // End camera transform
+    camera.end();
     
     // Draw formant visualization (not affected by camera)
     drawFormantVisualization();
@@ -580,8 +551,13 @@ function draw() {
         checkLevelComplete();
     }
     
-    // Draw UI (not affected by camera)
+    // Draw UI
     drawUI();
+
+    // Draw tutorial for Level 1
+    if (currentLevel === 1) {
+        drawTutorial();
+    }
 }
 
 function drawSkyGradient() {
@@ -640,13 +616,33 @@ function drawPlatforms() {
 }
 
 function updatePlatforms() {
-    // Only move platforms if player has horizontal velocity
-    if (player.velocity.x !== 0) {
-        for (let platform of platforms) {
-            platform.position.x -= player.velocity.x * TIME_FACTOR;
+    // Update all platforms
+    for (let platform of platforms) {
+        // Handle moving platforms
+        if (platform.moveType) {
+            // Update platform position based on movement type
+            if (platform.moveType === 'horizontal') {
+                // Move horizontally in world space
+                platform.position.x += platform.moveSpeed * platform.moveDirection;
+                
+                // Check boundaries in world space
+                if (platform.position.x <= platform.moveMin || platform.position.x >= platform.moveMax) {
+                    platform.moveDirection *= -1;
+                }
+            } else if (platform.moveType === 'vertical') {
+                // Move vertically in world space
+                platform.position.y += platform.moveSpeed * platform.moveDirection;
+                
+                // Check boundaries in world space
+                if (platform.position.y <= platform.moveMin || platform.position.y >= platform.moveMax) {
+                    platform.moveDirection *= -1;
+                }
+            }
         }
-        platforms = platforms.filter(p => p.position.x + p.size.x > 0);
     }
+
+    // Remove platforms that are too far behind the player
+    platforms = platforms.filter(p => p.position.x + p.size.x > player.position.x - SCREEN_WIDTH);
 }
 
 function drawObstacles() {
@@ -709,13 +705,8 @@ function drawExplosion(x, y) {
 }
 
 function updateObstacles() {
-    // Only move obstacles if player has horizontal velocity
-    if (player.velocity.x !== 0) {
-        for (let obstacle of obstacles) {
-            obstacle.position.x -= player.velocity.x * TIME_FACTOR;
-        }
-        obstacles = obstacles.filter(o => o.position.x + o.size.x > 0);
-    }
+    // Remove obstacles that are too far behind the player
+    obstacles = obstacles.filter(o => o.position.x + o.size.x > player.position.x - SCREEN_WIDTH);
 }
 
 function drawPortal() {
@@ -726,10 +717,11 @@ function drawPortal() {
         strokeWeight(3);
         ellipse(portal.x, portal.y, 50, 50);
         
-        // Draw portal center
+        // Draw pulsing portal center
+        let pulse = sin(frameCount * 0.05) * 5;
         fill(255, 0, 255, 100);
         noStroke();
-        ellipse(portal.x, portal.y, 30, 30);
+        ellipse(portal.x, portal.y, 30 + pulse, 30 + pulse);
         
         // Draw portal particles
         for (let i = 0; i < 8; i++) {
@@ -743,9 +735,10 @@ function drawPortal() {
 }
 
 function updatePortal() {
-    // Only move portal if player has horizontal velocity
-    if (portal && player.velocity.x !== 0) {
-        portal.x -= player.velocity.x * TIME_FACTOR;
+    // Portal stays in world space, no need to move it
+    // Only remove if too far behind player
+    if (portal && portal.x + 50 < player.position.x - SCREEN_WIDTH) {
+        portal = null;
     }
 }
 
@@ -780,7 +773,7 @@ function drawTitleScreen() {
     fill(255);
     textSize(48);
     textAlign(CENTER, CENTER);
-    text("Vowel-Controlled Platformer", width/2, height/2 - 100);
+    text("Vowelocity Voyage", width/2, height/2 - 100);
     
     // Countdown
     if (gameState.countdown > 0) {
@@ -788,7 +781,7 @@ function drawTitleScreen() {
         text(gameState.countdown, width/2, height/2);
     } else {
         textSize(32);
-        text("Say 'chEEse' to start!", width/2, height/2);
+        text("Say 'spEEd' to start!", width/2, height/2);
     }
     
     // Reset text alignment
@@ -847,11 +840,10 @@ function updatePlayer() {
         // Apply formant-based controls
         if (f1 && f2 && confidence > MIN_CONFIDENCE) {
             // Calculate amplitude scaling factor (0.3 to 1.0)
-            // This will only reduce movement at low volumes, never increase it
             const amplitudeScale = map(
                 constrain(gameState.amplitude, MIN_AMPLITUDE, MAX_AMPLITUDE),
                 MIN_AMPLITUDE, MAX_AMPLITUDE,
-                MIN_AMPLITUDE_SCALE, 1.0  // Scale from 0.3 to 1.0
+                MIN_AMPLITUDE_SCALE, 1.0
             );
             
             // F2 (front-back) controls horizontal movement
@@ -860,73 +852,49 @@ function updatePlayer() {
             // Calculate distance from neutral point
             const f2Distance = f2 - neutralF2;
             
-            // Apply asymmetric scaling for left/right movement
-            let f2_normalized;
-            if (f2Distance < 0) {
-                // Amplify left movement (negative values)
-                f2_normalized = (f2Distance / (neutralF2 - MIN_F2)) * 1.5; // 1.5x amplification for left
-            } else {
-                // Normal scaling for right movement
-                f2_normalized = f2Distance / (MAX_F2 - neutralF2);
+            // Apply asymmetric scaling for movement (stronger left movement)
+            let f2_normalized = f2Distance / (MAX_F2 - MIN_F2);
+            if (f2_normalized < 0) {
+                f2_normalized *= 1.5; // Amplify left movement by 50%
             }
             
             // Apply amplitude scaling to the normalized value
-            // This will only reduce movement at low volumes
             f2_normalized *= amplitudeScale;
             
-            // Direct velocity control with amplitude scaling
-            player.velocity.x = f2_normalized * MAX_SPEED * movementConfig.horizontalFactor * confidence;
+            // Direct velocity control with amplitude scaling and time factor
+            player.velocity.x = f2_normalized * MAX_SPEED * movementConfig.horizontalFactor * confidence * TIME_FACTOR;
             
             // F1 (openness) controls antigravity
-            // Map F1 to antigravity force:
-            // - 400Hz = 0 (no antigravity)
-            // - 525Hz = -GRAVITY (exactly cancels gravity)
-            // - >525Hz = stronger upward force
-            const neutralF1 = 400;
-            const balanceF1 = 525;     // 525Hz (lowered from 600Hz)
+            const neutralF1 = 375;  // Raised from 350 to 375
+            const balanceF1 = 475;
             let antigravityForce = 0;
             
-            if (f1 >= neutralF1) {  // Only apply if F1 is at least 400Hz
-                // Calculate how far we are from neutral point (400Hz)
-                const f1Range = balanceF1 - neutralF1;  // 200Hz range (reduced from 250Hz)
-                const f1Offset = f1 - neutralF1;        // How far above 400Hz
+            if (f1 >= neutralF1) {
+                const f1Range = balanceF1 - neutralF1;  // Now 100Hz range
+                const f1Offset = f1 - neutralF1;
                 
-                // Calculate force: 0 at 400Hz, -GRAVITY at 525Hz, stronger above 525Hz
-                antigravityForce = (f1Offset / f1Range) * GRAVITY * movementConfig.verticalFactor * confidence;
+                // Calculate force with time factor
+                antigravityForce = (f1Offset / f1Range) * GRAVITY * movementConfig.verticalFactor * confidence * TIME_FACTOR;
                 
                 // Apply amplitude scaling to antigravity
-                // This will only reduce movement at low volumes
                 antigravityForce *= amplitudeScale;
                 
                 // Apply the force
                 player.velocity.y -= antigravityForce;
                 
                 // Apply terminal velocity for upward movement
-                // Terminal velocity is proportional to antigravity strength
-                const terminalVelocity = -antigravityForce * 2; // Terminal velocity is 2x the antigravity force
+                const terminalVelocity = -antigravityForce * 2;
                 if (player.velocity.y < terminalVelocity) {
                     player.velocity.y = terminalVelocity;
                 }
             }
         }
         
-        // Apply gravity
-        player.velocity.y += GRAVITY;
+        // Apply gravity with time factor
+        player.velocity.y += GRAVITY * TIME_FACTOR;
         
         // Update position
         player.position.add(player.velocity);
-        
-        // Keep player in horizontal bounds
-        /*
-        if (player.position.x < 0) {
-            player.position.x = 0;
-            player.velocity.x = 0;
-        }
-        if (player.position.x > width - player.size) {
-            player.position.x = width - player.size;
-            player.velocity.x = 0;
-        }
-            */
         
         // Check for game over conditions (falling through ground or hitting ceiling)
         if (player.position.y >= height) {
@@ -943,6 +911,19 @@ function updatePlayer() {
                 player.position.x - headW / 2 < platform.position.x + platform.size.x &&
                 player.position.y + headH / 2 > platform.position.y && 
                 player.position.y - headH / 2 < platform.position.y + PLATFORM_HEIGHT) {
+                
+                // If platform is moving, add its velocity to player
+                if (platform.moveType === 'horizontal') {
+                    player.position.x += platform.moveSpeed * platform.moveDirection;
+                } else if (platform.moveType === 'vertical') {
+                    player.position.y += platform.moveSpeed * platform.moveDirection;
+                    // For vertical platforms, ensure player stays on top
+                    if (player.velocity.y >= 0) {  // If falling or moving down
+                        player.position.y = platform.position.y - headH / 2;
+                        player.velocity.y = 0;
+                    }
+                }
+                
                 if (player.velocity.y > 0) {  // Falling
                     player.position.y = platform.position.y - headH / 2;
                     player.velocity.y = 0;
@@ -959,12 +940,13 @@ function updatePlayer() {
                 player.position.x - headW / 2 < obstacle.position.x + obstacle.size.x &&
                 player.position.y + headH / 2 > obstacle.position.y && 
                 player.position.y - headH / 2 < obstacle.position.y + obstacle.size.y) {
-                // Trigger explosion
+                // Trigger explosion immediately
                 gameState.explosionActive = true;
                 gameState.explosionPosition = { x: obstacle.position.x, y: obstacle.position.y };
                 gameState.explosionTimer = EXPLOSION_DURATION;
-                gameState.explosionTriggeredGameOver = true; // Mark that this explosion should cause game over
-                // Do NOT call gameOver() or set pendingGameOver here
+                gameState.explosionTriggeredGameOver = true;
+                // Remove the obstacle immediately to prevent multiple triggers
+                obstacles = obstacles.filter(o => o !== obstacle);
                 break;
             }
         }
@@ -1010,9 +992,9 @@ function drawFormantVisualization() {
     let neutralF2 = 840;
     let xAxisX = map(neutralF2, MIN_F2, MAX_F2, FORMANT_VIZ_X, FORMANT_VIZ_X + FORMANT_VIZ_WIDTH);
     line(xAxisX, FORMANT_VIZ_Y, xAxisX, FORMANT_VIZ_Y + FORMANT_VIZ_HEIGHT);
-    // Horizontal axes at neutral F1 (400Hz) and balance F1 (525Hz)
-    let neutralF1 = 400;
-    let balanceF1 = 525;
+    // Horizontal axes at neutral F1 (375Hz) and balance F1 (475Hz)
+    let neutralF1 = 375;
+    let balanceF1 = 475;
     let yNeutral = map(neutralF1, MIN_F1, MAX_F1, FORMANT_VIZ_Y + FORMANT_VIZ_HEIGHT, FORMANT_VIZ_Y);
     let yBalance = map(balanceF1, MIN_F1, MAX_F1, FORMANT_VIZ_Y + FORMANT_VIZ_HEIGHT, FORMANT_VIZ_Y);
     line(FORMANT_VIZ_X, yNeutral, FORMANT_VIZ_X + FORMANT_VIZ_WIDTH, yNeutral);
@@ -1171,6 +1153,92 @@ function startCongratsCountdown() {
             }
         }, 1000);
     }
+}
+
+function drawTutorial() {
+    // Position the tutorial elements in the top-left corner
+    const baseX = 15; // Adjusted to be closer to the left edge (equal to padding)
+    let currentY = 15; // Adjusted to be closer to the top edge (equal to padding)
+    const lineHeight = 25; // Reduced line height
+    const arrowSize = 15; // Increased arrow size
+    const padding = 15; // Padding around the content
+    const titleHeight = 20; // Approximate height for the title text
+    const labelSize = 16; // Reduced text size for labels
+    const titleSize = 18; // Reduced text size for title
+    const arrowOffsetX = 20; // Increased offset from text to arrow
+
+    // Draw semi-transparent black background box
+    fill(0, 0, 0, 150); // Black with 150 alpha (out of 255)
+    noStroke();
+    // Recalculate box width and height based on new sizes
+    textSize(titleSize); // Use title size for title width calculation
+    const titleTextW = textWidth("Say vowel to move:");
+    textSize(labelSize); // Use label size for label width calculation
+    const uupTextW = textWidth("UUp:");
+    const speedTextW = textWidth("spEEd:");
+    const holdTextW = textWidth("hOld:");
+    const maxLabelTextW = max(uupTextW, speedTextW, holdTextW);
+    
+    // Box width needs to accommodate the widest line: either the title or a label + arrow
+    const maxContentW = max(titleTextW, maxLabelTextW + arrowOffsetX + arrowSize * 2); // Label width + offset + arrow length
+    const boxWidth = maxContentW + padding * 2; // Add padding on both sides
+    
+    const boxHeight = titleHeight + padding + lineHeight * 3 + padding * 2; // Height for title, padding, three lines, and padding
+    rect(baseX - padding, currentY - padding, boxWidth, boxHeight, 10); // Draw rounded rectangle
+
+    fill(255);
+    textSize(titleSize); // Use title size for the title
+    textAlign(LEFT, TOP);
+
+    // Add the title text
+    text("Say vowel to move:", baseX, currentY);
+
+    currentY += titleHeight + padding; // Move down for the movement instructions
+
+    textSize(labelSize); // Use label size for the labels and arrows
+
+    // UUp (Vertical Movement - Antigravity)
+    text("UUp:", baseX, currentY);
+    // Draw upward arrow (shapes)
+    let arrowUpX = baseX + uupTextW + arrowOffsetX;
+    let arrowUpY = currentY + lineHeight / 2;
+    stroke(255); // White stroke for arrows
+    strokeWeight(2);
+    line(arrowUpX, arrowUpY + arrowSize * 0.7, arrowUpX, arrowUpY - arrowSize * 0.7);
+    noStroke();
+    fill(255); // White fill for arrow head
+    triangle(arrowUpX - arrowSize * 0.4, arrowUpY - arrowSize * 0.7, arrowUpX + arrowSize * 0.4, arrowUpY - arrowSize * 0.7, arrowUpX, arrowUpY - arrowSize);
+
+    currentY += lineHeight; // Move down for next instruction
+
+    // spEEd (Horizontal Movement - Right)
+    text("spEEd:", baseX, currentY);
+    // Draw rightward arrow (shapes)
+    let arrowRightX = baseX + speedTextW + arrowOffsetX;
+    let arrowRightY = currentY + lineHeight / 2;
+    stroke(255); // White stroke for arrows
+    strokeWeight(2);
+    line(arrowRightX - arrowSize * 0.7, arrowRightY, arrowRightX + arrowSize * 0.7, arrowRightY);
+    noStroke();
+    fill(255); // White fill for arrow head
+    triangle(arrowRightX + arrowSize * 0.7, arrowRightY - arrowSize * 0.4, arrowRightX + arrowSize * 0.7, arrowRightY + arrowSize * 0.4, arrowRightX + arrowSize, arrowRightY);
+
+    currentY += lineHeight; // Move down for next instruction
+
+    // hOld (Horizontal Movement - Left)
+    text("hOld:", baseX, currentY);
+    // Draw leftward arrow (shapes) - Adjusted triangle points
+    let arrowLeftX = baseX + holdTextW + arrowOffsetX;
+    let arrowLeftY = currentY + lineHeight / 2;
+    stroke(255); // White stroke for arrows
+    strokeWeight(2);
+    line(arrowLeftX + arrowSize * 0.7, arrowLeftY, arrowLeftX - arrowSize * 0.7, arrowLeftY);
+    noStroke();
+    fill(255); // White fill for arrow head
+    // Adjusted triangle points to be relative to the end of the line for better shape
+    triangle(arrowLeftX - arrowSize * 0.7, arrowLeftY - arrowSize * 0.4, arrowLeftX - arrowSize * 0.7, arrowLeftY + arrowSize * 0.4, arrowLeftX - arrowSize, arrowLeftY);
+
+    textAlign(LEFT, BASELINE); // Reset text alignment
 }
 
 // Clean up when the page is closed

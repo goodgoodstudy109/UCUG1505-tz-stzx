@@ -64,6 +64,23 @@ let skyColorBottom;
 
 // Level Design - Redesigned for Voice Control
 const levels = [
+    // Level 0: Tutorial (Single Platform)
+    {
+        platforms: [
+            { x: 100, y: SCREEN_HEIGHT - 50, width: 800 }, // Very long single platform
+        ],
+        obstacles: [], // No obstacles
+        portal: { x: 900, y: SCREEN_HEIGHT - 100 },
+        tutorialText: [
+            "Level 0: Welcome!",
+            "Controls:",
+            "  \"blow\" -> Speed Up",
+            "  \"hiss\" -> Slow Down",
+            "  \"pop\"  -> Jump",
+            "  \"hat\"  -> Float (Slow Fall)",
+            "Try moving to the blue portal!"
+        ]
+    },
     // Level 1: Introduction (Easier, Wider Platforms, No Obstacles)
     {
         platforms: [
